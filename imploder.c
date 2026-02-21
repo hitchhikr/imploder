@@ -692,7 +692,7 @@ int main(int argc, char *argv[])
     int op = OP_IMPLODE;
     int arg_pos = 1;
 
-    printf("Imploder data cruncher/decruncher v1.0\n");
+    printf("Imploder data cruncher/decruncher v1.1\n");
     printf("Reversed by lab313ru + small shell by hitchhikr.\n");
     if(argc < 2 || argc > 3)
     {

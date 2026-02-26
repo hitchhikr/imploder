@@ -1,5 +1,7 @@
 // =================================================================
-// Imploder data cruncher/decruncher
+// Imploder cruncher/decruncher v1.2
+// Imploding/Exploding algorithm reversed by Vladimir Kononovich (lab313ru)
+// Amiga hunks parser coming from: https://github.com/emoon/AmigaHunkParser/tree/master
 // =================================================================
 
 // =================================================================
@@ -10,7 +12,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
-#include <strings.h>
+#include <string.h>
+
+#include "amiga_hunk_parser.h"
+
+typedef struct
+{
+	int done;
+	int val1[8];
+	int val2[8];
+} TEST;
 
 // =================================================================
 static unsigned int MAX_SIZES[12] =
@@ -55,8 +66,6 @@ static unsigned char explode_token_base[4] =
     6, 10, 10, 18
 };
 
-unsigned char *src;
-
 unsigned int read_pos, src_size, max_encoded_size, end_offset, token_run_len;
 unsigned char write_byte;
 
@@ -68,12 +77,14 @@ unsigned int last_offset, encoded_offset;
 char write_bits_cnt;
 
 unsigned short counts[8];
+unsigned short done[8];
 unsigned int offsets[8];
 
 unsigned int run_base_offs[12];
 unsigned char run_extra_bits[12];
 
 unsigned char *src, *cmpr_data;
+TEST *hash;
 unsigned int write_pos, src_end;
 int cmpr_pos;
 
@@ -178,7 +189,7 @@ static unsigned int checksum(unsigned char *buf, unsigned int size)
 	unsigned int sum = 0;
 
 	size >>= 1;
-	for (int i = 0; i < size; i++)
+	for (unsigned int i = 0; i < size; i++)
     {
 		sum += read_word(&buf[i * 2]);
 	}
@@ -186,11 +197,15 @@ static unsigned int checksum(unsigned char *buf, unsigned int size)
 	return (sum + 7);
 }
 
-void find_repeats()
+static void find_repeats()
 {
+//	int j;
+	int reps;
+
 	for (int i = 0; i < 8; i++)
     {
 		counts[i] = 0;
+		done[i] = 0;
 	}
 
 	unsigned int limit = read_pos + max_encoded_size;
@@ -202,37 +217,40 @@ void find_repeats()
 
 	int min_reps = 1;
 	unsigned int offset = read_pos;
+	unsigned char src_char = src[read_pos];
+	unsigned char *src_ptr = &src[read_pos];
+	unsigned char* src_ptr_2;
 
 	while (offset < limit)
     {
-		while (src[++offset] != src[read_pos] && offset < limit);
-
-		int reps = 1;
-
-		while (src[read_pos + reps] == src[offset + reps] && reps < 0xFF && (offset + reps) < limit)
-        {
+		// Look for next identical byte from current one
+		while (src[++offset] != src_char && offset < limit);
+		src_ptr_2 = src_ptr + 1;
+		reps = 1;
+		// Count the identical bytes sequence (max. 255)
+		while (*src_ptr_2++ == src[offset + reps] && reps < 255 && (offset + reps) < limit)
+		{
 			reps++;
 		}
-
 		if (reps > min_reps)
-        {
+		{
 			min_reps = reps;
-
 			if (reps <= 8)
-            {
+			{
 				if (counts[reps - 2] == 0)
-                {
+				{
 					counts[reps - 2] = reps;
 					offsets[reps - 2] = offset - read_pos - 1;
+					done[reps - 2] = 1;
 				}
 			}
 			else
-            {
+			{
 				counts[7] = reps;
 				offsets[7] = offset - read_pos - 1;
-
-				if (reps == 0xFF)
-                {
+				done[7] = 1;
+				if (reps == 255)
+				{
 					break;
 				}
 			}
@@ -240,7 +258,7 @@ void find_repeats()
 	}
 }
 
-int encode_match(unsigned char count, unsigned int offset)
+static int encode_match(unsigned short count, unsigned int offset)
 {
 	count -= 2;
 	if (count <= 3)
@@ -309,7 +327,7 @@ int encode_match(unsigned char count, unsigned int offset)
 	return -1;
 }
 
-unsigned short find_best_match_and_encode()
+static unsigned short find_best_match_and_encode()
 {
 	short max = 0;
 	unsigned short retn = 0;
@@ -391,7 +409,7 @@ int explode(unsigned char *input)
 
 	while (1)
     {
-		for (int i = 0; (i < token_run_len) && (src_end > 0); i++)
+		for (unsigned int i = 0; (i < token_run_len) && (src_end > 0); i++)
         {
 			src[--src_end] = cmpr_data[--cmpr_pos];
 		}
@@ -480,7 +498,7 @@ int explode(unsigned char *input)
 			match = &src[src_end + read_bits(run_extra_bits[selector]) + 1];
 		}
 
-		for (int i = 0; (i < match_len) && (src_end > 0); i++)
+		for (unsigned int i = 0; (i < match_len) && (src_end > 0); i++)
         {
 			src[--src_end] = *--match;
 		}
@@ -489,10 +507,10 @@ int explode(unsigned char *input)
 	return src_size;
 }
 
-unsigned int implode(unsigned char *input, unsigned int size, char mode)
+unsigned int implode(unsigned char* input, unsigned int size, char mode)
 {
 	if (!input || size < 0x40)
-    {
+	{
 		return 0;
 	}
 
@@ -513,124 +531,158 @@ unsigned int implode(unsigned char *input, unsigned int size, char mode)
 	write_bits_cnt = 0;
 
 	if (mode >= 0x0C)
-    {
+	{
 		mode = 0;
 	}
 
 	max_encoded_size = MAX_SIZES[mode] + 1;
 
 	if (max_encoded_size > src_size)
-    {
+	{
 		max_encoded_size = src_size - 1;
 	}
 
 	unsigned char size_mode = 0;
 	while (max_encoded_size - 1 > MAX_SIZES[size_mode])
-    {
+	{
 		size_mode++;
 	}
 
 	for (int i = 0; i < 0x0C; i++)
-    {
+	{
 		run_extra_bits[i] = MODE_INIT[size_mode][i];
 		run_base_offs[i] = (1 << MODE_INIT[size_mode][i]);
 	}
 
 	for (int i = 0; i < 8; i++)
-    {
+	{
 		run_base_offs[4 + i] += run_base_offs[i];
 	}
 
 	write_bits_cnt = 7;
+	hash = malloc(src_size * sizeof(TEST));
+	if(hash)
+	{
+		memset(hash, 0, src_size * sizeof(TEST));
 
-	while (read_pos < src_size - 2)
-    {
-		find_repeats();
+		while (read_pos < src_size - 2)
+		{
+			find_repeats();
 
-		unsigned short len = find_best_match_and_encode();
-		if (!len)
-        {
-			src[end_offset++] = src[read_pos++];
-			token_run_len++;
+			unsigned short len = find_best_match_and_encode();
+			if (!len)
+			{
+				// Literal
+				src[end_offset++] = src[read_pos++];
+				token_run_len++;
 
-			if (token_run_len >= 0x4012)
-            {
-				break;
-			}
-		}
-		else
-        {
-			token_run_len = 0;
-
-			read_pos += len;
-			write_bits(encoded_offset_bits_cnt, encoded_offset);
-			write_bits(encoded_token_len_bits_cnt, encoded_token_len);
-
-			if (encoded_reps_bits_cnt == 13)
-            {
-				src[end_offset++] = encoded_reps & 0xFF;
-				write_bits(5, 0x1F);
+				if (token_run_len >= 0x4012)
+				{
+					break;
+				}
 			}
 			else
-            {
-				write_bits(encoded_reps_bits_cnt, encoded_reps);
+			{
+				token_run_len = 0;
+
+				read_pos += len;
+				write_bits(encoded_offset_bits_cnt, encoded_offset);
+				write_bits(encoded_token_len_bits_cnt, encoded_token_len);
+
+				if (encoded_reps_bits_cnt == 13)
+				{
+					src[end_offset++] = encoded_reps & 0xFF;
+					write_bits(5, 0x1F);
+				}
+				else
+				{
+					write_bits(encoded_reps_bits_cnt, encoded_reps);
+				}
 			}
 		}
-	}
-
-	while (read_pos != src_size)
-    {
-		src[end_offset++] = src[read_pos++];
-		token_run_len++;
-	}
-
-	if (end_offset >= 0x0C && (src_size - end_offset > 54))
-    {
-		if (end_offset & 1)
-        {
-			src[end_offset++] = 0;
-			write_word(&src[end_offset + 0x10], (write_byte & 0xFE) | (1 << write_bits_cnt));
-		}
-		else
-        {
-			write_word(&src[end_offset + 0x10], 0xFF00 | (write_byte & 0xFE) | (1 << write_bits_cnt));
+		free(hash);
+		while (read_pos != src_size)
+		{
+			src[end_offset++] = src[read_pos++];
+			token_run_len++;
 		}
 
-		unsigned int cmp_dword_1 = read_dword(&src[0x00]);
-		unsigned int cmp_dword_2 = read_dword(&src[0x04]);
-		unsigned int cmp_dword_3 = read_dword(&src[0x08]);
-		// HEADER
-		// +0x00, MAGIC DWORD
-        write_dword(&src[0x00], 0x494d5021); // "IMP!"
-		// +0x04, UNCOMPRESSED SIZE
-        write_dword(&src[0x04], src_size);
-		// +0x08, CMPR DATA OFFSET
-        write_dword(&src[0x08], end_offset);
-		// +0x0C, COMPRESSED DWORD AS IS: SRC[0x0C], NO NEED TO REPLACE
+		if (end_offset >= 0x0C && (src_size - end_offset > 54))
+		{
+			if (end_offset & 1)
+			{
+				src[end_offset++] = 0;
+				write_word(&src[end_offset + 0x10], (write_byte & 0xFE) | (1 << write_bits_cnt));
+			}
+			else
+			{
+				write_word(&src[end_offset + 0x10], 0xFF00 | (write_byte & 0xFE) | (1 << write_bits_cnt));
+			}
 
-		// 0x00, CMPR DATA DWORD 3
-        write_dword(&src[end_offset + 0x00], cmp_dword_3);
-		// +0x04, CMPR DATA DWORD 2
-        write_dword(&src[end_offset + 0x04], cmp_dword_2);
-		// +0x08, CMPR DATA DWORD 1
-        write_dword(&src[end_offset + 0x08], cmp_dword_1);
-		// +0x0C, LITERAL RUN LEN
-        write_dword(&src[end_offset + 0x0C], token_run_len);
+			unsigned int cmp_dword_1 = read_dword(&src[0x00]);
+			unsigned int cmp_dword_2 = read_dword(&src[0x04]);
+			unsigned int cmp_dword_3 = read_dword(&src[0x08]);
 
-		// +0x12, BASE OFFSETS TABLE
-		for (int i = 0; i < 8; i++)
-        {
-			write_word(&src[end_offset + 0x12 + i * 2], run_base_offs[i] & 0xFFFF);
+			// HEADER
+			// +0x00, MAGIC DWORD
+			write_dword(&src[0], 0x494d5021); // "IMP!"
+			// +0x04, UNCOMPRESSED SIZE
+			write_dword(&src[0x04], src_size);
+			// +0x08, CMPR DATA OFFSET
+			write_dword(&src[0x08], end_offset);
+			// +0x0C, COMPRESSED DWORD AS IS: SRC[0x0C], NO NEED TO REPLACE
+
+			// 0x00, CMPR DATA DWORD 3
+			write_dword(&src[end_offset + 0x00], cmp_dword_3);
+			// +0x04, CMPR DATA DWORD 2
+			write_dword(&src[end_offset + 0x04], cmp_dword_2);
+			// +0x08, CMPR DATA DWORD 1
+			write_dword(&src[end_offset + 0x08], cmp_dword_1);
+			// +0x0C, LITERAL RUN LEN
+			write_dword(&src[end_offset + 0x0C], token_run_len);
+
+			// +0x12, BASE OFFSETS TABLE
+			for (int i = 0; i < 8; i++)
+			{
+				write_word(&src[end_offset + 0x12 + i * 2], run_base_offs[i] & 0xFFFF);
+			}
+
+			// +0x22, EXTRA BITS TABLE
+			copy_bytes(&src[end_offset + 0x22], &run_extra_bits[0], 12);
+
+			// +0x2E, CHECKSUM OF DATA
+			write_dword(&src[end_offset + 0x2E], checksum(&src[0], end_offset + 0x2E));
+			return (end_offset + 0x2E + 4);
 		}
-
-		// +0x22, EXTRA BITS TABLE
-		copy_bytes(&src[end_offset + 0x22], &run_extra_bits[0], 12);
-
-		// +0x2E, CHECKSUM OF DATA
-        write_dword(&src[end_offset + 0x2E], checksum(&src[0], end_offset + 0x2E));
-		return (end_offset + 0x2E + 4);
 	}
 	return 0;
+}
+
+int check_exe_file(char *filename)
+{
+    unsigned int header;
+    FILE *input = fopen(filename, "rb");
+    if(!input)
+    {
+        fprintf(stderr, "Error: opening input file.");
+        exit(1);
+    }
+    if(fread(&header, 1, 4, input) != (size_t) 4)
+    {
+        fprintf(stderr, "\nError: reading input file.");
+        fclose(input);
+        exit(1);
+    }
+    fclose(input);
+#ifdef __AMIGA__
+    if(header == 0x000003f3)
+#else
+    if(header == 0xf3030000)
+#endif
+    {
+        return TRUE;
+    }
+    return FALSE;
 }
 
 unsigned char *load_input_file(char *filename, unsigned int *size, int *op)
@@ -668,7 +720,7 @@ unsigned char *load_input_file(char *filename, unsigned int *size, int *op)
     if(exp_size)
     {
         *op = OP_EXPLODE;
-        memory = realloc(memory, exp_size);
+        memory = (unsigned char *) realloc(memory, exp_size);
         if(!memory)
         {
             fprintf(stderr, "\nError: can't allocate memory.");
@@ -686,99 +738,137 @@ int main(int argc, char *argv[])
 	unsigned char *src_mem;
 	FILE *output_file;
 	unsigned int dest_size;
-    char auto_name[512];
+    char dest_filename[512];
     int ret_value = 0;
     // default operation
     int op = OP_IMPLODE;
     int arg_pos = 1;
+	AHPInfo *info;
 
-    printf("Imploder data cruncher/decruncher v1.1\n");
-    printf("Reversed by lab313ru + small shell by hitchhikr.\n");
+    printf("Imploder cruncher/decruncher v1.2\n");
+    printf("Written by hitchhikr.\n");
     if(argc < 2 || argc > 3)
     {
         printf("Usage: imploder <input file> [output file]\n");
-        return ret_value;
+        return 1;
     }
-
-	if(src_mem = load_input_file(argv[arg_pos], &size, &op))
-	{
-        if(op == OP_IMPLODE)
+    
+    // Check the nature of the file
+    if(check_exe_file(argv[arg_pos]))
+    {
+        // Exe file
+        if(argc != 3)
         {
-            printf("\nImploding...");
-#ifdef __AMIGA__
-            fflush(stdout);
-#endif
-            dest_size = implode(src_mem, size, 0xB);
-            if(dest_size)
-            {
-                printf("\nOriginal size: %d bytes.\n", size);
-                printf("Imploded size: %d bytes.\n", dest_size);
-                printf("Won: %d bytes.", size - dest_size);
-            }
+            strcpy(dest_filename, argv[arg_pos]);
+            strcat(dest_filename, ".exe");
         }
         else
         {
-            printf("\nExploding...");
-#ifdef __AMIGA__
-            fflush(stdout);
-#endif
-            dest_size = explode(src_mem);
-            if(dest_size)
-            {
-                printf("\nOriginal size: %d bytes.\n", size);
-                printf("Exploded size: %d bytes.", dest_size);
-            }
+            arg_pos++;
+            strcpy(dest_filename, argv[arg_pos]);
         }
-        if(dest_size)
+        if (!(info = ahp_parse_file(argv[arg_pos])))
+        {
+            return 1;
+        }
+        dest_size = ahp_pack(info, dest_filename);
+        ahp_free(info);
+        if(!dest_size)
+        {
+            ret_value = 1;
+        }
+    }
+    else
+    {
+        // Data file
+        if(src_mem = load_input_file(argv[arg_pos], &size, &op))
         {
             // user didn't supply an output name
             if(argc != 3)
             {
-                strcpy(auto_name, argv[arg_pos]);
+                strcpy(dest_filename, argv[arg_pos]);
                 if(op == OP_IMPLODE)
                 {
-                    strcat(auto_name, ".imp");
+                    strcat(dest_filename, ".imp");
                 }
                 else
                 {
-                    strcat(auto_name, ".exp");
-                }     
+                    strcat(dest_filename, ".exp");
+                }
             }
             else
             {
                 arg_pos++;
-                strcpy(auto_name, argv[arg_pos]);
+                strcpy(dest_filename, argv[arg_pos]);
             }
-            printf("\nWriting '%s'...", auto_name);
-            output_file = fopen(auto_name, "wb");
-            if(output_file)
+            if(op == OP_IMPLODE)
             {
-                fwrite(src_mem, 1, dest_size, output_file);
-                fclose(output_file);
+                printf("\nImploding data file...");
+#ifdef __AMIGA__
+                fflush(stdout);
+#endif
+                dest_size = implode(src_mem, size, 0xB);
+                if(dest_size)
+                {
+                    printf("\n\nOriginal size: %8d bytes.\n", size);
+                    printf("Imploded size: %8d bytes.\n", dest_size);
+                    printf("          Won: %8d bytes.\n", size - dest_size);
+                }
             }
             else
             {
-                fprintf(stderr, "\nError: can't open '%s' for writing.", auto_name);
+                printf("\nExploding...");
+#ifdef __AMIGA__
+                fflush(stdout);
+#endif
+                dest_size = explode(src_mem);
+                if(dest_size)
+                {
+                    printf("\n\nOriginal size: %8d bytes.\n", size);
+                    printf("Exploded size: %8d bytes.\n", dest_size);
+                }
+            }
+            if(dest_size)
+            {
+                printf("\nWriting '%s'...", dest_filename);
+                output_file = fopen(dest_filename, "wb");
+                if(output_file)
+                {
+                    if(fwrite(src_mem, 1, dest_size, output_file) != dest_size)
+                    {
+                        fprintf(stderr, "\nError: can't write to file.");
+                        fclose(output_file);
+                        ret_value = 1;
+                    }
+                    else
+                    {
+                        fclose(output_file);
+                    }
+                }
+                else
+                {
+                    fprintf(stderr, "\nError: can't open '%s' for writing.", dest_filename);
+                    ret_value = 1;
+                }
+            }
+            else
+            {
+                if(op == OP_IMPLODE)
+                {
+                    fprintf(stderr, "\nError: can't implode.");
+                }
+                else
+                {
+                    fprintf(stderr, "\nError: can't explode.");
+                }
                 ret_value = 1;
             }
+            free(src_mem);
         }
         else
         {
-            if(op == OP_IMPLODE)
-            {
-                fprintf(stderr, "\nError: can't implode.");
-            }
-            else
-            {
-                fprintf(stderr, "\nError: can't explode.");
-            }
             ret_value = 1;
         }
-		free(src_mem);
-	}
-    else
-    {
-        ret_value = 1;
     }
 #ifdef __AMIGA__
     printf("\n");

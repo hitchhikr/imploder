@@ -323,7 +323,7 @@ static void parseReloc32(AHPSection *section, const void *data, int *currIndex)
 			if((get_u32_inc(data, &index)) > (unsigned int) section->memSize - 4)
 			{
 				printf("\nError in reloc table!\n");
-				exit(1);
+				exit(EXIT_FAILURE);
 			}
 		}
 	}

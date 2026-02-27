@@ -199,7 +199,6 @@ static unsigned int checksum(unsigned char *buf, unsigned int size)
 
 static void find_repeats()
 {
-//	int j;
 	int reps;
 
 	for (int i = 0; i < 8; i++)
@@ -219,7 +218,7 @@ static void find_repeats()
 	unsigned int offset = read_pos;
 	unsigned char src_char = src[read_pos];
 	unsigned char *src_ptr = &src[read_pos];
-	unsigned char* src_ptr_2;
+	unsigned char *src_ptr_2;
 
 	while (offset < limit)
     {
@@ -665,13 +664,13 @@ int check_exe_file(char *filename)
     if(!input)
     {
         fprintf(stderr, "Error: opening input file.");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
     if(fread(&header, 1, 4, input) != (size_t) 4)
     {
         fprintf(stderr, "\nError: reading input file.");
         fclose(input);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
     fclose(input);
 #ifdef __AMIGA__

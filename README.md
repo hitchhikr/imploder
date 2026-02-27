@@ -8,6 +8,10 @@ and can decrunch in-place without any overhead.
 
 Windows and Amiga executables provided.
 
+v1.2b:
+
+- Fixed exit().
+
 v1.2:
 
 - Added support for Amiga executables compression

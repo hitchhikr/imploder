@@ -1,5 +1,5 @@
 // =================================================================
-// Imploder cruncher/decruncher v1.2
+// Imploder cruncher/decruncher v1.2b
 // Imploding/Exploding algorithm reversed by Vladimir Kononovich (lab313ru)
 // Amiga hunks parser coming from: https://github.com/emoon/AmigaHunkParser/tree/master
 // =================================================================
@@ -744,7 +744,7 @@ int main(int argc, char *argv[])
     int arg_pos = 1;
 	AHPInfo *info;
 
-    printf("Imploder cruncher/decruncher v1.2\n");
+    printf("Imploder cruncher/decruncher v1.2b\n");
     printf("Written by hitchhikr.\n");
     if(argc < 2 || argc > 3)
     {

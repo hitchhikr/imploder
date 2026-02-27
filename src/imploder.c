@@ -738,7 +738,7 @@ int main(int argc, char *argv[])
 	FILE *output_file;
 	unsigned int dest_size;
     char dest_filename[512];
-    int ret_value = 0;
+    int ret_value = EXIT_SUCCESS;
     // default operation
     int op = OP_IMPLODE;
     int arg_pos = 1;
@@ -774,7 +774,7 @@ int main(int argc, char *argv[])
         ahp_free(info);
         if(!dest_size)
         {
-            ret_value = 1;
+            ret_value = EXIT_FAILURE;
         }
     }
     else
@@ -837,7 +837,7 @@ int main(int argc, char *argv[])
                     {
                         fprintf(stderr, "\nError: can't write to file.");
                         fclose(output_file);
-                        ret_value = 1;
+                        ret_value = EXIT_FAILURE;
                     }
                     else
                     {
@@ -847,7 +847,7 @@ int main(int argc, char *argv[])
                 else
                 {
                     fprintf(stderr, "\nError: can't open '%s' for writing.", dest_filename);
-                    ret_value = 1;
+                    ret_value = EXIT_FAILURE;
                 }
             }
             else
@@ -860,13 +860,13 @@ int main(int argc, char *argv[])
                 {
                     fprintf(stderr, "\nError: can't explode.");
                 }
-                ret_value = 1;
+                ret_value = EXIT_FAILURE;
             }
             free(src_mem);
         }
         else
         {
-            ret_value = 1;
+            ret_value = EXIT_FAILURE;
         }
     }
 #ifdef __AMIGA__

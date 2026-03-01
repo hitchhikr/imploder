@@ -12,7 +12,7 @@ v1.3:
 
 - Crashed when trying to pack exe with bss sections.
 - Tried to pack destination file when supplying
-  a desination exe filename.
+  a destination exe filename.
 
 v1.2b:
 

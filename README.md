@@ -8,6 +8,12 @@ and can decrunch in-place without any overhead.
 
 Windows and Amiga executables provided.
 
+v1.3:
+
+- Crashed when trying to pack exe with bss sections.
+- Tried to pack destination file when supplying
+  a desination exe filename.
+
 v1.2b:
 
 - Fixed exit().

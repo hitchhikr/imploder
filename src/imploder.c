@@ -1,5 +1,5 @@
 // =================================================================
-// Imploder cruncher/decruncher v1.2b
+// Imploder cruncher/decruncher v1.3
 // Imploding/Exploding algorithm reversed by Vladimir Kononovich (lab313ru)
 // Amiga hunks parser coming from: https://github.com/emoon/AmigaHunkParser/tree/master
 // =================================================================
@@ -737,14 +737,15 @@ int main(int argc, char *argv[])
 	unsigned char *src_mem;
 	FILE *output_file;
 	unsigned int dest_size;
-    char dest_filename[512];
+	char source_filename[512];
+	char dest_filename[512];
     int ret_value = EXIT_SUCCESS;
     // default operation
     int op = OP_IMPLODE;
     int arg_pos = 1;
 	AHPInfo *info;
 
-    printf("Imploder cruncher/decruncher v1.2b\n");
+    printf("Imploder cruncher/decruncher v1.3\n");
     printf("Written by hitchhikr.\n");
     if(argc < 2 || argc > 3)
     {
@@ -752,13 +753,15 @@ int main(int argc, char *argv[])
         return 1;
     }
     
+	strcpy(source_filename, argv[arg_pos]);
+
     // Check the nature of the file
     if(check_exe_file(argv[arg_pos]))
     {
         // Exe file
         if(argc != 3)
         {
-            strcpy(dest_filename, argv[arg_pos]);
+            strcpy(dest_filename, source_filename);
             strcat(dest_filename, ".exe");
         }
         else
@@ -766,7 +769,7 @@ int main(int argc, char *argv[])
             arg_pos++;
             strcpy(dest_filename, argv[arg_pos]);
         }
-        if (!(info = ahp_parse_file(argv[arg_pos])))
+        if (!(info = ahp_parse_file(source_filename)))
         {
             return 1;
         }
@@ -780,12 +783,12 @@ int main(int argc, char *argv[])
     else
     {
         // Data file
-        if(src_mem = load_input_file(argv[arg_pos], &size, &op))
+        if(src_mem = load_input_file(source_filename, &size, &op))
         {
             // user didn't supply an output name
             if(argc != 3)
             {
-                strcpy(dest_filename, argv[arg_pos]);
+                strcpy(dest_filename, source_filename);
                 if(op == OP_IMPLODE)
                 {
                     strcat(dest_filename, ".imp");

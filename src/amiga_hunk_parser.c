@@ -580,17 +580,17 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
 	{
 		AHPSection *section = &info->sections[i];
 
-        // Add the data
-        memcpy(info->sections_mem[i], info->fileData + section->dataStart, section->memSize);
-        // Add the relocs
-        memcpy(info->sections_mem[i] + section->memSize, info->fileData + section->relocStart, section->relocRealSize);
-
-        section->unpackedSize = section->relocRealSize + section->memSize;
-
         switch(section->type)
         {
             case AHPSectionType_Code:
             case AHPSectionType_Data:
+                // Add the data
+                memcpy(info->sections_mem[i], info->fileData + section->dataStart, section->memSize);
+                // Add the relocs
+                memcpy(info->sections_mem[i] + section->memSize, info->fileData + section->relocStart, section->relocRealSize);
+
+                section->unpackedSize = section->relocRealSize + section->memSize;
+
                 packed_size = implode(info->sections_mem[i], section->unpackedSize, 0xB);
                 if(!packed_size)
                 {

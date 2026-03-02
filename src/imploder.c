@@ -1,7 +1,7 @@
 // =================================================================
-// Imploder cruncher/decruncher v1.3
+// Imploder cruncher/decruncher v1.4
 // Imploding/Exploding algorithm reversed by Vladimir Kononovich (lab313ru)
-// Amiga hunks parser coming from: https://github.com/emoon/AmigaHunkParser/tree/master
+// Amiga hunks parser coming from: https://github.com/emoon/AmigaHunkParser
 // =================================================================
 
 // =================================================================
@@ -9,13 +9,20 @@
 #define OP_IMPLODE 0
 #define OP_EXPLODE 1
 
+#define FILE_DATA 0
+#define FILE_EXE_AMIGA 1
+#define FILE_EXE_X68000 2
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
 #include <string.h>
 
-#include "amiga_hunk_parser.h"
+#include "endian.h"
+#include "amiga_parser.h"
+#include "x68000_parser.h"
 
+// =================================================================
 typedef struct
 {
 	int done;
@@ -90,17 +97,21 @@ int cmpr_pos;
 
 unsigned char token;
 
+int packed_dest_size;
+
 // =================================================================
 static unsigned short word_get_bits_right(unsigned short value, unsigned char count)
 {
 	return (unsigned short) (((1 << count) - 1) & value);
 }
 
+// =================================================================
 static unsigned int long_get_bits_right(unsigned int value, unsigned char count)
 {
 	return (unsigned int) (((1 << count) - 1) & value);
 }
 
+// =================================================================
 static void copy_bytes(unsigned char *dst, unsigned char *src, int count)
 {
 	for (int i = 0; i < count; i++)
@@ -109,28 +120,33 @@ static void copy_bytes(unsigned char *dst, unsigned char *src, int count)
 	}
 }
 
+// =================================================================
 static unsigned short read_word(unsigned char *buf)
 {
 	return ((buf[0] << 8) | buf[1]);
 }
 
+// =================================================================
 static unsigned int read_dword(unsigned char *buf)
 {
 	return ((read_word(&buf[0]) << 16) | read_word(&buf[2]));
 }
 
+// =================================================================
 static void write_word(unsigned char *dst, unsigned short value)
 {
 	dst[0] = (value >> 8) & 0xFF;
 	dst[1] = (value >> 0) & 0xFF;
 }
 
+// =================================================================
 static void write_dword(unsigned char *dst, unsigned int value)
 {
 	write_word(&dst[0], (value >> 16) & 0xFFFF);
 	write_word(&dst[2], (value >> 0) & 0xFFFF);
 }
 
+// =================================================================
 unsigned int read_bits(unsigned char count)
 {
 	unsigned int retn = 0;
@@ -152,6 +168,7 @@ unsigned int read_bits(unsigned char count)
 	return retn;
 }
 
+// =================================================================
 int check_imp(unsigned char *input)
 {
 	unsigned int id, end_off, out_len;
@@ -177,6 +194,7 @@ int check_imp(unsigned char *input)
 	return !((end_off & 1) || (end_off < 14) || ((end_off + 0x26) > out_len));
 }
 
+// =================================================================
 int exploded_size(unsigned char *input)
 {
 	if(!check_imp(input)) return 0;
@@ -184,6 +202,7 @@ int exploded_size(unsigned char *input)
 	return read_dword(&input[4]);
 }
 
+// =================================================================
 static unsigned int checksum(unsigned char *buf, unsigned int size)
 {
 	unsigned int sum = 0;
@@ -197,6 +216,7 @@ static unsigned int checksum(unsigned char *buf, unsigned int size)
 	return (sum + 7);
 }
 
+// =================================================================
 static void find_repeats()
 {
 	int reps;
@@ -257,6 +277,7 @@ static void find_repeats()
 	}
 }
 
+// =================================================================
 static int encode_match(unsigned short count, unsigned int offset)
 {
 	count -= 2;
@@ -326,6 +347,7 @@ static int encode_match(unsigned short count, unsigned int offset)
 	return -1;
 }
 
+// =================================================================
 static unsigned short find_best_match_and_encode()
 {
 	short max = 0;
@@ -352,6 +374,7 @@ static unsigned short find_best_match_and_encode()
 	return retn;
 }
 
+// =================================================================
 void write_bits(unsigned char count, unsigned int value)
 {
 	for (int i = 0; i < count; i++)
@@ -370,6 +393,7 @@ void write_bits(unsigned char count, unsigned int value)
 	}
 }
 
+// =================================================================
 int explode(unsigned char *input)
 {
 	if (!check_imp(input))
@@ -506,6 +530,7 @@ int explode(unsigned char *input)
 	return src_size;
 }
 
+// =================================================================
 unsigned int implode(unsigned char* input, unsigned int size, char mode)
 {
 	if (!input || size < 0x40)
@@ -657,6 +682,7 @@ unsigned int implode(unsigned char* input, unsigned int size, char mode)
 	return 0;
 }
 
+// =================================================================
 int check_exe_file(char *filename)
 {
     unsigned int header;
@@ -673,17 +699,22 @@ int check_exe_file(char *filename)
         exit(EXIT_FAILURE);
     }
     fclose(input);
-#ifdef __AMIGA__
-    if(header == 0x000003f3)
-#else
-    if(header == 0xf3030000)
-#endif
+
+    if(swap_uint32(header) == 0x000003f3)
     {
-        return TRUE;
+        return FILE_EXE_AMIGA;
     }
-    return FALSE;
+
+    if( ((unsigned char *) &header)[0] == 0x48 && // "H"
+        ((unsigned char *) &header)[1] == 0x55 && // "U"
+        ((unsigned char *) &header)[2] == 0)
+    {
+        return FILE_EXE_X68000;
+    }
+    return FILE_DATA;
 }
 
+// =================================================================
 unsigned char *load_input_file(char *filename, unsigned int *size, int *op)
 {
     unsigned char *memory;
@@ -695,7 +726,10 @@ unsigned char *load_input_file(char *filename, unsigned int *size, int *op)
         fprintf(stderr, "Error: opening input file.");
         return(NULL);
     }
-    printf("Reading '%s'...", filename);
+    printf("\nReading '%s'...", filename);
+#ifdef __AMIGA__
+    fflush(stdout);
+#endif
     // get the filesize
     fseek(input, 0, SEEK_END);
     *size = ftell(input);
@@ -727,153 +761,227 @@ unsigned char *load_input_file(char *filename, unsigned int *size, int *op)
             return(NULL);
         }
     }
+    printf("\n");
     fclose(input);
     return(memory);
 }
 
+// =================================================================
 int main(int argc, char *argv[])
 {
+    int i;
 	unsigned int size;
 	unsigned char *src_mem;
 	FILE *output_file;
 	unsigned int dest_size;
 	char source_filename[512];
 	char dest_filename[512];
+    char extension[12];
     int ret_value = EXIT_SUCCESS;
     // default operation
     int op = OP_IMPLODE;
     int arg_pos = 1;
-	AHPInfo *info;
+    int mode = -1;
+	AHPInfo *amiga_info;
+	X68000Info *x68000_info;
 
-    printf("Imploder cruncher/decruncher v1.3\n");
+    printf("Imploder cruncher/decruncher v1.4\n");
     printf("Written by hitchhikr.\n");
-    if(argc < 2 || argc > 3)
+    if(argc < 2 || argc > 4)
     {
-        printf("Usage: imploder <input file> [output file]\n");
-        return 1;
+        printf("Usage: imploder [-<mode number>] <input file> [output file]\n");
+        return EXIT_FAILURE;
+    }
+    
+    if(argv[arg_pos][0] == '-')
+    {
+        mode = atoi(&argv[arg_pos][1]);
+        if(mode < 0 || mode > 11)
+        {
+            fprintf(stderr, "Error: wrong mode (0 to 11).");
+            return EXIT_FAILURE;
+        }
+        arg_pos++;
     }
     
 	strcpy(source_filename, argv[arg_pos]);
 
     // Check the nature of the file
-    if(check_exe_file(argv[arg_pos]))
+    switch(check_exe_file(source_filename))
     {
-        // Exe file
-        if(argc != 3)
-        {
-            strcpy(dest_filename, source_filename);
-            strcat(dest_filename, ".exe");
-        }
-        else
-        {
-            arg_pos++;
-            strcpy(dest_filename, argv[arg_pos]);
-        }
-        if (!(info = ahp_parse_file(source_filename)))
-        {
-            return 1;
-        }
-        dest_size = ahp_pack(info, dest_filename);
-        ahp_free(info);
-        if(!dest_size)
-        {
-            ret_value = EXIT_FAILURE;
-        }
-    }
-    else
-    {
-        // Data file
-        if(src_mem = load_input_file(source_filename, &size, &op))
-        {
-            // user didn't supply an output name
-            if(argc != 3)
+        case FILE_EXE_AMIGA:
+            // Exe file
+            if(argc < (mode == -1 ? 3: 4))
             {
                 strcpy(dest_filename, source_filename);
-                if(op == OP_IMPLODE)
-                {
-                    strcat(dest_filename, ".imp");
-                }
-                else
-                {
-                    strcat(dest_filename, ".exp");
-                }
+                strcat(dest_filename, ".exe");
             }
             else
             {
                 arg_pos++;
                 strcpy(dest_filename, argv[arg_pos]);
             }
-            if(op == OP_IMPLODE)
-            {
-                printf("\nImploding data file...");
+            printf("\nReading '%s'...", source_filename);
 #ifdef __AMIGA__
-                fflush(stdout);
+            fflush(stdout);
 #endif
-                dest_size = implode(src_mem, size, 0xB);
-                if(dest_size)
+            if (!(amiga_info = amiga_parse_file(source_filename)))
+            {
+                return EXIT_FAILURE;
+            }
+            if(mode == -1)
+            {
+                mode = 11;
+            }
+            dest_size = amiga_pack(amiga_info, dest_filename, mode);
+            amiga_free(amiga_info);
+            if(!dest_size)
+            {
+                ret_value = EXIT_FAILURE;
+            }
+            break;
+
+        case FILE_EXE_X68000:
+            // Exe file
+            if(argc < (mode == -1 ? 3: 4))
+            {
+                strcpy(dest_filename, source_filename);
+                i = strlen(dest_filename);
+                while(dest_filename[i] != '.' && i)
                 {
-                    printf("\n\nOriginal size: %8d bytes.\n", size);
-                    printf("Imploded size: %8d bytes.\n", dest_size);
-                    printf("          Won: %8d bytes.\n", size - dest_size);
+                    i--;
                 }
+                strcpy(extension, &dest_filename[i]);
+                if(i >= 5)
+                {
+                    i -= 3;
+                }
+                dest_filename[i] = 0;
+                i = strlen(dest_filename);
+                strcat(dest_filename, "imp");
+                strcat(dest_filename, extension);
             }
             else
             {
-                printf("\nExploding...");
-#ifdef __AMIGA__
-                fflush(stdout);
-#endif
-                dest_size = explode(src_mem);
-                if(dest_size)
-                {
-                    printf("\n\nOriginal size: %8d bytes.\n", size);
-                    printf("Exploded size: %8d bytes.\n", dest_size);
-                }
+                arg_pos++;
+                strcpy(dest_filename, argv[arg_pos]);
             }
-            if(dest_size)
+            printf("\nReading '%s'...", source_filename);
+#ifdef __AMIGA__
+            fflush(stdout);
+#endif            
+            if (!(x68000_info = x68000_parse_file(source_filename)))
             {
-                printf("\nWriting '%s'...", dest_filename);
-                output_file = fopen(dest_filename, "wb");
-                if(output_file)
+                return EXIT_FAILURE;
+            }
+            if(mode == -1)
+            {
+                mode = 11;
+            }
+            dest_size = x68000_pack(x68000_info, dest_filename, mode);
+            x68000_free(x68000_info);
+            if(!dest_size)
+            {
+                ret_value = EXIT_FAILURE;
+            }
+            break;
+
+        case FILE_DATA:
+            // Data file
+            if(src_mem = load_input_file(source_filename, &size, &op))
+            {
+                // user didn't supply an output name
+                if(argc < (mode == -1 ? 3: 4))
                 {
-                    if(fwrite(src_mem, 1, dest_size, output_file) != dest_size)
+                    strcpy(dest_filename, source_filename);
+                    if(op == OP_IMPLODE)
                     {
-                        fprintf(stderr, "\nError: can't write to file.");
-                        fclose(output_file);
-                        ret_value = EXIT_FAILURE;
+                        strcat(dest_filename, ".imp");
                     }
                     else
                     {
-                        fclose(output_file);
+                        strcat(dest_filename, ".exp");
                     }
                 }
                 else
                 {
-                    fprintf(stderr, "\nError: can't open '%s' for writing.", dest_filename);
-                    ret_value = EXIT_FAILURE;
+                    arg_pos++;
+                    strcpy(dest_filename, argv[arg_pos]);
                 }
-            }
-            else
-            {
                 if(op == OP_IMPLODE)
                 {
-                    fprintf(stderr, "\nError: can't implode.");
+                    if(mode == -1)
+                    {
+                        mode = 11;
+                    }
+                    printf("\nImploding data file (using mode %d)...", mode);
+    #ifdef __AMIGA__
+                    fflush(stdout);
+    #endif
+                    dest_size = implode(src_mem, size, mode);
+                    if(dest_size)
+                    {
+                        printf("\n\nOriginal size: %8d bytes.\n", size);
+                        printf("Imploded size: %8d bytes.\n", dest_size);
+                        printf("          Won: %8d bytes.", size - dest_size);
+                    }
                 }
                 else
                 {
-                    fprintf(stderr, "\nError: can't explode.");
+                    printf("\nExploding...");
+    #ifdef __AMIGA__
+                    fflush(stdout);
+    #endif
+                    dest_size = explode(src_mem);
+                    if(dest_size)
+                    {
+                        printf("\n\nOriginal size: %8d bytes.\n", size);
+                        printf("Exploded size: %8d bytes.", dest_size);
+                    }
                 }
+                if(dest_size)
+                {
+                    printf("\n\nWriting '%s'...", dest_filename);
+                    output_file = fopen(dest_filename, "wb");
+                    if(output_file)
+                    {
+                        if(fwrite(src_mem, 1, dest_size, output_file) != dest_size)
+                        {
+                            fprintf(stderr, "\n\nError: can't write to file.");
+                            fclose(output_file);
+                            ret_value = EXIT_FAILURE;
+                        }
+                        else
+                        {
+                            fclose(output_file);
+                        }
+                    }
+                    else
+                    {
+                        fprintf(stderr, "\n\nError: can't open '%s' for writing.", dest_filename);
+                        ret_value = EXIT_FAILURE;
+                    }
+                }
+                else
+                {
+                    if(op == OP_IMPLODE)
+                    {
+                        fprintf(stderr, "\n\nError: can't implode.");
+                    }
+                    else
+                    {
+                        fprintf(stderr, "\n\nError: can't explode.");
+                    }
+                    ret_value = EXIT_FAILURE;
+                }
+                free(src_mem);
+            }
+            else
+            {
                 ret_value = EXIT_FAILURE;
             }
-            free(src_mem);
-        }
-        else
-        {
-            ret_value = EXIT_FAILURE;
-        }
+            break;
     }
-#ifdef __AMIGA__
     printf("\n");
-#endif
 	return ret_value;
 }

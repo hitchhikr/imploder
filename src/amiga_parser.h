@@ -1,6 +1,6 @@
 // =================================================================
-#ifndef AMIGA_HUNK_PARSER_
-#define AMIGA_HUNK_PARSER_
+#ifndef _AMIGA_HUNK_PARSER_
+#define _AMIGA_HUNK_PARSER_
 
 #include <stdint.h>
 
@@ -36,6 +36,7 @@ typedef struct AHPLineInfo
 	const char* filename;
 	int count;
 	uint32_t baseOffset;
+	uint32_t entryPoint;
 	uint32_t* addresses;
 	int* lines;
 } AHPLineInfo;
@@ -62,7 +63,7 @@ typedef struct AHPSection
 // =================================================================
 typedef struct AHPInfo
 {
-	AHPSection* sections; 
+	AHPSection *sections; 
     unsigned char **sections_mem;
 	int sectionCount;
     int source_size;
@@ -70,8 +71,8 @@ typedef struct AHPInfo
 } AHPInfo;
 
 // =================================================================
-AHPInfo *ahp_parse_file(const char* filename);
-int ahp_pack(AHPInfo* info, char *dest_filename);
-void ahp_free(AHPInfo* info);
+AHPInfo *amiga_parse_file(const char *filename);
+int amiga_pack(AHPInfo *info, char *dest_filename, int mode);
+void amiga_free(AHPInfo *info);
 
 #endif

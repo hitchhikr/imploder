@@ -1,5 +1,20 @@
+// =================================================================
 #pragma once
 
+// =================================================================
+#include <stdint.h>
+
+// =================================================================
+#if defined (__AROS__)
+    #include <aros/cpu.h>
+    #if AROS_BIG_ENDIAN
+        #define AHP_BIG_ENDIAN
+        #define AHP_BYTE_ORDER 4321
+    #else
+        #define AHP_LITTLE_ENDIAN
+        #define AHP_BYTE_ORDER 1234
+    #endif
+#else
 #if defined (__GLIBC__)
 #include <endian.h>
 #if (__BYTE_ORDER == __LITTLE_ENDIAN)
@@ -9,7 +24,7 @@
 #elif (__BYTE_ORDER == __PDP_ENDIAN)
 	#define AHP_BIG_ENDIAN
 #else
-	#error Unknown machine endianness detected.
+	#error "Unable to detect endian for your target."
 #endif
 	#define AHP_BYTE_ORDER __BYTE_ORDER
 #elif defined(_BIG_ENDIAN)
@@ -22,7 +37,7 @@
    || defined(_POWER) || defined(__powerpc__) \
    || defined(__ppc__) || defined(__hpux) \
    || defined(_MIPSEB) || defined(_POWER) \
-   || defined(__s390__)
+   || defined(__s390__) || defined(__m68k__)
 	#define AHP_BIG_ENDIAN
 	#define AHP_BYTE_ORDER 4321
 #elif defined(__i386__) || defined(__alpha__) \
@@ -37,3 +52,8 @@
 #else
 	#error "Unable to detect endian for your target."
 #endif
+#endif
+
+// =================================================================
+uint16_t swap_uint16(uint16_t val);
+uint32_t swap_uint32(uint32_t val);

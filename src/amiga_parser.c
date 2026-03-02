@@ -3,62 +3,14 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include "doshunks.h"
-#include "amiga_hunk_parser.h"
-
-#include "ovl_depacker.h"
 
 // =================================================================
+#include "doshunks.h"
+#include "amiga_parser.h"
+#include "endian.h"
+#include "amiga_depacker.h"
 
-#if defined (__AROS__)
-    #include <aros/cpu.h>
-    #if AROS_BIG_ENDIAN
-        #define AHP_BIG_ENDIAN
-        #define AHP_BYTE_ORDER 4321
-    #else
-        #define AHP_LITTLE_ENDIAN
-        #define AHP_BYTE_ORDER 1234
-    #endif
-#else
-#if defined (__GLIBC__)
-#include <endian.h>
-#if (__BYTE_ORDER == __LITTLE_ENDIAN)
-	#define AHP_LITTLE_ENDIAN
-#elif (__BYTE_ORDER == __BIG_ENDIAN)
-	#define AHP_BIG_ENDIAN
-#elif (__BYTE_ORDER == __PDP_ENDIAN)
-	#define AHP_BIG_ENDIAN
-#else
-	#error "Unable to detect endian for your target."
-#endif
-	#define AHP_BYTE_ORDER __BYTE_ORDER
-#elif defined(_BIG_ENDIAN)
-	#define AHP_BIG_ENDIAN
-	#define AHP_BYTE_ORDER 4321
-#elif defined(_LITTLE_ENDIAN)
-	#define AHP_LITTLE_ENDIAN
-	#define AHP_BYTE_ORDER 1234
-#elif defined(__sparc) || defined(__sparc__) \
-   || defined(_POWER) || defined(__powerpc__) \
-   || defined(__ppc__) || defined(__hpux) \
-   || defined(_MIPSEB) || defined(_POWER) \
-   || defined(__s390__)
-	#define AHP_BIG_ENDIAN
-	#define AHP_BYTE_ORDER 4321
-#elif defined(__i386__) || defined(__alpha__) \
-   || defined(__ia64) || defined(__ia64__) \
-   || defined(_M_IX86) || defined(_M_IA64) \
-   || defined(_M_ALPHA) || defined(__amd64) \
-   || defined(__amd64__) || defined(_M_AMD64) \
-   || defined(__x86_64) || defined(__x86_64__) \
-   || defined(_M_X64) || defined(__arm64__)
-	#define AHP_LITTLE_ENDIAN
-	#define AHP_BYTE_ORDER 1234
-#else
-	#error "Unable to detect endian for your target."
-#endif
-#endif
-
+// =================================================================
 #define HUNK_DEBUG_LINE 0x4C494E45
 
 #define MEMF_ANY 0
@@ -76,60 +28,36 @@ const char* hunktype[HUNK_ABSRELOC16 - HUNK_UNIT + 1] =
     "RELOC32SHORT", "RELRELOC32", "ABSRELOC16"
 };
 
+extern int packed_dest_size;
+
 // =================================================================
 unsigned int implode(unsigned char *input, unsigned int size, char mode);
 
-int packed_dest_size;
-
 // =================================================================
-static inline uint16_t swap_uint16(uint16_t val)
+static uint32_t get_u32(const void *t, int index)
 {
-    return (val << 8) | (val >> 8);
-}
-
-// =================================================================
-static inline uint32_t swap_uint32(uint32_t val)
-{
-    return ((val & 0x000000ff) << 24) |
-           ((val & 0x0000ff00) << 8) |
-           ((val & 0x00ff0000) >> 8) |
-           ((val & 0xff000000) >> 24);
-}
-
-// =================================================================
-uint32_t get_u32(const void *t, int index)
-{
-    uint32_t* mem = (uint32_t *)(((uint8_t *) t) + index);
-#if defined(AHP_LITTLE_ENDIAN)
+    uint32_t *mem = (uint32_t *)(((uint8_t *) t) + index);
     return swap_uint32(*mem);
-#endif
-    return *mem;
 }
 
 // =================================================================
-uint32_t get_u32_inc(const void *t, int *index)
+static uint32_t get_u32_inc(const void *t, int *index)
 {
     uint32_t *mem = (uint32_t *)(((uint8_t *) t) + *index);
     *index += 4;
-#if defined(AHP_LITTLE_ENDIAN)
     return swap_uint32(*mem);
-#endif
-    return *mem;
 }
 
 // =================================================================
-uint16_t get_u16_inc(const void *t, int *index)
+static uint16_t get_u16_inc(const void *t, int *index)
 {
-    uint16_t* mem = (uint16_t *)(((uint8_t *) t) + *index);
+    uint16_t *mem = (uint16_t *)(((uint8_t *) t) + *index);
     *index += 2;
-#if defined(AHP_LITTLE_ENDIAN)
     return swap_uint16(*mem);
-#endif
-    return *mem;
 }
 
 // =================================================================
-void *loadToMemory(const char *filename, int *size)
+static void *loadToMemory(const char *filename, int *size)
 {
     FILE *f = fopen(filename, "rb");
     void *data = 0;
@@ -137,14 +65,14 @@ void *loadToMemory(const char *filename, int *size)
 
     *size = 0;
 
-    if (!f)
+    if(!f)
     {
         return 0;
     }
     fseek(f, 0, SEEK_END);
     long ts = ftell(f);
 
-    if (ts < 0)
+    if(ts < 0)
     {
         goto end;
     }
@@ -167,16 +95,19 @@ end:
 }
 
 // =================================================================
-void *alloc_zero(int size)
+static void *alloc_zero(int size)
 {
 	void *t = malloc(size);
-	memset(t, 0, size); 
+    if(t)
+    {
+        memset(t, 0, size); 
+    }
 	return t;
 }
 
 // =================================================================
-#define xalloc_zero(type, count) (type*)alloc_zero(sizeof(type) * count);
-#define xalloc(type, count) (type*)malloc(sizeof(type) * count);
+#define xalloc_zero(type, count) (type *) alloc_zero(sizeof(type) * count);
+#define xalloc(type, count) (type *) malloc(sizeof(type) * count);
 
 // =================================================================
 static void parseSymbols(AHPSection *section, const void *data, int *currIndex)
@@ -296,7 +227,6 @@ static void parseCodeDataBss(AHPSection *section, int type, const void *data, in
 
 			for (unsigned int pos = section->dataStart; pos < section->dataStart + section->dataSize; pos += 4)
 				sum += get_u32(data, pos);
-
 			(void) sum;
 		}
 	}
@@ -322,7 +252,7 @@ static void parseReloc32(AHPSection *section, const void *data, int *currIndex)
 		{
 			if((get_u32_inc(data, &index)) > (unsigned int) section->memSize - 4)
 			{
-				printf("\nError in reloc table!\n");
+				fprintf(stderr, "\n\nError: Error in reloc table.");
 				exit(EXIT_FAILURE);
 			}
 		}
@@ -343,7 +273,7 @@ static int parseSection(AHPSection *section, const void *data, int hunkId, int s
 	{
 		if(index >= size)
 		{
-			printf("\nUnexpected end of file!\n");
+			fprintf(stderr, "\n\nError: Unexpected end of file.");
 			return 0;
 		}
 
@@ -351,7 +281,7 @@ static int parseSection(AHPSection *section, const void *data, int hunkId, int s
 
 		if(index >= size && type != HUNK_END)
 		{
-			printf("\nUnexpected end of file!\n");
+			fprintf(stderr, "\n\nError: Unexpected end of file.");
 			return 0;
 		}
 
@@ -382,7 +312,7 @@ static int parseSection(AHPSection *section, const void *data, int hunkId, int s
 			case HUNK_RELRELOC32:
 			case HUNK_ABSRELOC16:
 			{
-				printf("%s (unsupported) at %d\n", hunktype[type - HUNK_UNIT], index);
+				fprintf(stderr, "\n\nError: %s (unsupported) at %d.", hunktype[type - HUNK_UNIT], index);
 				return 0;
 			}
 
@@ -394,7 +324,7 @@ static int parseSection(AHPSection *section, const void *data, int hunkId, int s
 
 			default:
 			{
-				printf("Unknown (%08X)\n", type);
+				fprintf(stderr, "\n\nError: Unknown (%08X).", type);
 				return 0;
 			}
 		}
@@ -404,7 +334,7 @@ static int parseSection(AHPSection *section, const void *data, int hunkId, int s
 }
 
 // =================================================================
-AHPInfo *ahp_parse_file(const char *filename)
+AHPInfo *amiga_parse_file(const char *filename)
 {
     int size = 0;
     void *data = loadToMemory(filename, &size);
@@ -415,19 +345,27 @@ AHPInfo *ahp_parse_file(const char *filename)
 
     if(!data)
     {
-        printf("Unable to open %s\n", filename);
+        fprintf(stderr, "\nError: Unable to open %s.", filename);
         return 0;
     }
 
     AHPInfo *info = xalloc_zero(AHPInfo, 1);
 
+    if(!info)
+    {
+        fprintf(stderr, "\n\nError: Not enough memory.");
+        amiga_free(info);
+        return 0;
+    }
+
     info->fileData = data;
     info->source_size = size;
 
-    if(get_u32_inc(data, &index) != HUNK_HEADER)
+    header = get_u32_inc(data, &index);
+    if(header != HUNK_HEADER)
     {
-        printf("HunkHeader is incorrect (should be 0x%08x but is 0x%08x)\n", HUNK_HEADER, header);
-        ahp_free(info);
+        fprintf(stderr, "\n\nError: HunkHeader is incorrect (should be 0x%08x but is 0x%08x).", HUNK_HEADER, header);
+        amiga_free(info);
         return 0;
     }
 
@@ -436,8 +374,8 @@ AHPInfo *ahp_parse_file(const char *filename)
         index += get_u32(data, index) * 4;
         if(index >= size)
         {
-            printf("Bad hunk header!\n");
-        	ahp_free(info);
+            fprintf(stderr, "\n\nError: Bad hunk header.");
+        	amiga_free(info);
             return 0;
         }
     }
@@ -446,8 +384,8 @@ AHPInfo *ahp_parse_file(const char *filename)
 
     if(sectionCount == 0)
     {
-        printf("No sections!\n");
-		ahp_free(info);
+        fprintf(stderr, "\n\nError: No sections.");
+		amiga_free(info);
         return 0;
     }
 
@@ -456,8 +394,8 @@ AHPInfo *ahp_parse_file(const char *filename)
 
     if(get_u32_inc(data, &index) != 0 || get_u32_inc(data, &index) != sectionCount - 1)
     {
-        printf("Unsupported hunk load limits!\n");
-        ahp_free(info);
+        fprintf(stderr, "\n\nError: Unsupported hunk load limits.");
+        amiga_free(info);
         return 0;
     }
 
@@ -471,9 +409,9 @@ AHPInfo *ahp_parse_file(const char *filename)
 
         switch(flags)
 		{
-			case 0 : target = AHPSectionTarget_Any; break; 
-			case HUNKF_CHIP : target = AHPSectionTarget_Chip; break; 
-			case HUNKF_FAST : target = AHPSectionTarget_Fast; break; 
+			case 0: target = AHPSectionTarget_Any; break; 
+			case HUNKF_CHIP: target = AHPSectionTarget_Chip; break; 
+			case HUNKF_FAST: target = AHPSectionTarget_Fast; break; 
 		}
 
 		sections[h].target = target;
@@ -484,14 +422,14 @@ AHPInfo *ahp_parse_file(const char *filename)
     {
     	if(!parseSection(&sections[h], data, h, size, &index)) 
 		{
-			ahp_free(info);
+			amiga_free(info);
     		return 0; 
 		}
     }
 
     if(index < size)
     {
-        printf("Warning: %d bytes of extra data at the end of the file!\n", (int)(size - index) * 4);
+        fprintf(stderr, "\n\nWarning: %d bytes of extra data at the end of the file.\n", (int) (size - index) * 4);
     }
 
     return info;
@@ -502,9 +440,9 @@ static const char *getTypeName(AHPSectionType type)
 {
 	switch(type)
 	{
-		case AHPSectionType_Code : return "CODE";
-		case AHPSectionType_Data : return "DATA";
-		case AHPSectionType_Bss : return  " BSS";
+		case AHPSectionType_Code: return "CODE";
+		case AHPSectionType_Data: return "DATA";
+		case AHPSectionType_Bss: return  " BSS";
 	}
 	return "UNKN";
 }
@@ -514,26 +452,23 @@ static const char *getTargetName(AHPSectionTarget target)
 {
 	switch(target)
 	{
-		case AHPSectionTarget_Any : return  " ANY";
-		case AHPSectionTarget_Fast : return "FAST";
-		case AHPSectionTarget_Chip : return "CHIP";
+		case AHPSectionTarget_Any: return  " ANY";
+		case AHPSectionTarget_Fast: return "FAST";
+		case AHPSectionTarget_Chip: return "CHIP";
 	}
 	return "UNKN";
 }
 
 // =================================================================
-int write_longword(unsigned int data, FILE *output_file)
+static int write_longword(unsigned int data, FILE *output_file)
 {
     unsigned int fixed_data;
 
-#if defined(AHP_LITTLE_ENDIAN)
     fixed_data = swap_uint32(data);
-#else
-    fixed_data = data;
-#endif
 
     if(fwrite(&fixed_data, 1, sizeof(fixed_data), output_file) != sizeof(fixed_data))
     {
+        fprintf(stderr, "\n\nError: can't write to file.");
         fclose(output_file);
         return 0;
     }
@@ -541,9 +476,8 @@ int write_longword(unsigned int data, FILE *output_file)
     return 1;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-int ahp_pack(AHPInfo *info, char *dest_filename)
+// =================================================================
+int amiga_pack(AHPInfo *info, char *dest_filename, int mode)
 {	
 	int i;
     int packed_size;
@@ -552,6 +486,8 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
     unsigned int allocmem_flags = 0;
 
     packed_dest_size = 0;
+	printf("\n\nAmiga executable.\n");
+
 	printf("\nSec Type Target     Size   Relocs\n");
 
     info->sections_mem = malloc(info->sectionCount * sizeof(unsigned char *));
@@ -568,12 +504,16 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
         info->sections_mem[i] = malloc(section->memSize + section->relocRealSize);
         if(!info->sections_mem[i])
         {
+            fprintf(stderr, "\n\nError: not enough memory.");
             return 0;
         }
         memset(info->sections_mem[i], 0, section->memSize + section->relocRealSize);
 	}
 
-    printf("\nImploding exe file...\n");
+    printf("\nImploding exe file (using mode %d)...", mode);
+#ifdef __AMIGA__
+    fflush(stdout);
+#endif
 
     // Pack them
 	for (i = 0; i < info->sectionCount; ++i)
@@ -591,10 +531,10 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
 
                 section->unpackedSize = section->relocRealSize + section->memSize;
 
-                packed_size = implode(info->sections_mem[i], section->unpackedSize, 0xB);
+                packed_size = implode(info->sections_mem[i], section->unpackedSize, mode);
                 if(!packed_size)
                 {
-                    fprintf(stderr, "\nError: can't implode.");
+                    fprintf(stderr, "\n\nError: can't implode.");
                     return 0;
                 }
                 section->packedSize = ((packed_size + 3) >> 2) << 2;
@@ -605,7 +545,7 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
     }
 
     // Print results
-	printf("\nSec Type Target     Size\n");
+	printf("\n\nSec Type Target     Size\n");
 
 	for (i = 0; i < info->sectionCount; ++i)
 	{
@@ -619,6 +559,9 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
 
     // Save the packed file
     printf("\nWriting '%s'...", dest_filename);
+#ifdef __AMIGA__
+    fflush(stdout);
+#endif
 
     output_file = fopen(dest_filename, "wb");
     if(output_file)
@@ -634,29 +577,29 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
         // LAST_HUNK
         if(!write_longword(1, output_file)) return 0;
         // OVERLAY SIZE
-        if(!write_longword(size_ovl_depacker >> 2, output_file)) return 0;
+        if(!write_longword(size_amiga_depacker >> 2, output_file)) return 0;
         // Phony size
         if(!write_longword(0, output_file)) return 0;
         if(!write_longword(HUNK_CODE, output_file)) return 0;
-        if(!write_longword(size_ovl_depacker >> 2, output_file)) return 0;
+        if(!write_longword(size_amiga_depacker >> 2, output_file)) return 0;
 
         // Write the depacker
-        if(fwrite(ovl_depacker, 1, size_ovl_depacker, output_file) != size_ovl_depacker)
+        if(fwrite(amiga_depacker, 1, size_amiga_depacker, output_file) != size_amiga_depacker)
         {
-            fprintf(stderr, "\nError: can't write to file.");
+            fprintf(stderr, "\n\nError: can't write to file.");
             fclose(output_file);
             return 0;
         }
-        packed_dest_size += size_ovl_depacker;
+        packed_dest_size += size_amiga_depacker;
 
         // Close the hunk
-        write_longword(HUNK_END, output_file);
-        write_longword(HUNK_OVERLAY, output_file);
-        write_longword(0, output_file);
-        write_longword(HUNK_BREAK, output_file);
+        if(!write_longword(HUNK_END, output_file)) return 0;
+        if(!write_longword(HUNK_OVERLAY, output_file)) return 0;
+        if(!write_longword(0, output_file)) return 0;
+        if(!write_longword(HUNK_BREAK, output_file)) return 0;
 
         // Number of sections to depack
-        write_longword(info->sectionCount - 1, output_file);
+        if(!write_longword(info->sectionCount - 1, output_file)) return 0;
 
         // Write the packed sections infos
         for (i = 0; i < info->sectionCount; ++i)
@@ -678,26 +621,26 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
             if(section->type != AHPSectionType_Bss)
             {
                 // reloc pos
-                write_longword(section->memSize, output_file);
+                if(!write_longword(section->memSize, output_file)) return 0;
                 // depacked size for allocation
                 // +8 for DOS memlist
                 // +4 for empty relocations
-                write_longword(section->memSize + section->relocRealSize + 4 + 8, output_file);
+                if(!write_longword(section->memSize + section->relocRealSize + 4 + 8, output_file)) return 0;
                 // memory type
-                write_longword(allocmem_flags, output_file);
+                if(!write_longword(allocmem_flags, output_file)) return 0;
                 // packed size for reading
-                write_longword(section->packedSize, output_file);
+                if(!write_longword(section->packedSize, output_file)) return 0;
             }
             else
             {
                 // a bss section have no relocs
-                write_longword(-1, output_file);
+                if(!write_longword(-1, output_file)) return 0;
                 // memory to alloc
-                write_longword(section->memSize + 4 + 8, output_file);
+                if(!write_longword(section->memSize + 4 + 8, output_file)) return 0;
                 // memory type
-                write_longword(allocmem_flags, output_file);
+                if(!write_longword(allocmem_flags, output_file)) return 0;
                 // no reading
-                write_longword(-1, output_file);
+                if(!write_longword(-1, output_file)) return 0;
             }
         }
 
@@ -709,7 +652,7 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
             {
                 if(fwrite(info->sections_mem[i], 1, section->packedSize, output_file) != section->packedSize)
                 {
-                    fprintf(stderr, "\nError: can't write to file.");
+                    fprintf(stderr, "\n\nError: can't write to file.");
                     fclose(output_file);
                     return 0;
                 }
@@ -720,30 +663,35 @@ int ahp_pack(AHPInfo *info, char *dest_filename)
     }
     else
     {
-        fprintf(stderr, "\nError: can't open '%s' for writing.", dest_filename);
+        fprintf(stderr, "\n\nError: can't open '%s' for writing.", dest_filename);
+        return 0;
     }
 
     if(packed_dest_size)
     {
         printf("\n\nOriginal size: %8d bytes.\n", info->source_size);
         printf("Imploded size: %8d bytes.\n", packed_dest_size);
-        printf("          Won: %8d bytes.\n", info->source_size - packed_dest_size);
+        printf("          Won: %8d bytes.", info->source_size - packed_dest_size);
     }
     return 1;
 }
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-void ahp_free(AHPInfo* info)
+// =================================================================
+void amiga_free(AHPInfo *info)
 {
     int i;
 
 	for (i = 0; i < info->sectionCount; ++i)
 	{
         if(info->sections_mem[i]) free(info->sections_mem[i]);
+        info->sections_mem[i] = NULL;
 	}
     if(info->sections_mem) free(info->sections_mem);
+    info->sections_mem = NULL;
 	if(info->sections) free(info->sections);
-	if(info->fileData) free(info->fileData);
+	info->sections = NULL;
+    if(info->fileData) free(info->fileData);
+	info->fileData = NULL;
 	if(info) free(info);
+    info = NULL;
 }

@@ -8,6 +8,12 @@ and can decrunch in-place without any overhead.
 
 Windows and Amiga executables provided.
 
+v1.4:
+
+- Can now optionally specify imploding mode/strength
+  as command argument (from 0 to 11) (default is 11).
+- Can now pack X68000 .x executables with an overlay depacker.
+
 v1.3:
 
 - Crashed when trying to pack exe with bss sections.

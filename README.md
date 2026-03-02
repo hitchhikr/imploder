@@ -4,6 +4,8 @@ Based on the reversed implode/explode routines from lab313ru.
 Imploder packs quite well, the decruncher is relatively fast
 and can decrunch in-place without any overhead.
 
+It can pack Amiga executables, X68000 executables or plain data files.
+
 68000 asm decruncher taken and improved from a Team 17 game.
 
 Windows and Amiga executables provided.

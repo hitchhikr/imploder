@@ -158,7 +158,7 @@ static void parseDebug(AHPSection *section, const void *data, int *currIndex)
 
 	if(debugId != HUNK_DEBUG_LINE)
 	{
-		*currIndex += hunkLength;
+		*currIndex += hunkLength + 4;
 		return;
 	}
 
@@ -429,7 +429,7 @@ AHPInfo *amiga_parse_file(const char *filename)
 
     if(index < size)
     {
-        fprintf(stderr, "\n\nWarning: %d bytes of extra data at the end of the file.\n", (int) (size - index) * 4);
+        fprintf(stderr, "\n\nWarning: %d bytes of extra data at the end of the file.\n", (int) (size - index));
     }
 
     return info;
@@ -501,6 +501,7 @@ int amiga_pack(AHPInfo *info, char *dest_filename, int mode)
 				getTargetName(section->target),
 				section->memSize,
                 section->relocRealSize);
+
         info->sections_mem[i] = malloc(section->memSize + section->relocRealSize);
         if(!info->sections_mem[i])
         {
@@ -683,6 +684,18 @@ void amiga_free(AHPInfo *info)
 
 	for (i = 0; i < info->sectionCount; ++i)
 	{
+        AHPSection *section = &info->sections[i];
+        if(section->symbols) free(section->symbols);
+        section->symbols = NULL;
+		for (int d = 0; d < section->debugLineCount; ++d)
+		{
+			if(section->debugLines[d].addresses) free(section->debugLines[d].addresses);
+            section->debugLines[d].addresses = NULL;
+			if(section->debugLines[d].lines) free(section->debugLines[d].lines);
+            section->debugLines[d].lines = NULL;
+		}
+		if(section->debugLines) free(section->debugLines);
+        section->debugLines = NULL;
         if(info->sections_mem[i]) free(info->sections_mem[i]);
         info->sections_mem[i] = NULL;
 	}

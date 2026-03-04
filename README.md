@@ -19,7 +19,7 @@ Windows and Amiga executables provided.
 
 v1.4b:
 
-- Fixed some potential memory leaks.
+- Fixed some potential memory leaks after packing Amiga exes.
 
 v1.4:
 

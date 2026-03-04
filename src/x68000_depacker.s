@@ -1,5 +1,5 @@
 ; ============================================================
-; Impoder v1.4 overlay X68000 depacker
+; Impoder v1.4b overlay X68000 depacker
 ; Written by hitchhikr.
 ; ============================================================
                     opt     o+
@@ -33,7 +33,7 @@ STRUCT_LEN          rs.b    0
 begin:
                     movem.l d0-d6/a0-a3/a5/a6,-(a7)
                     lea     (16,a0),a0
-                    suba.l  a0,a1
+                    sub.l   a0,a1
                     move.l  a1,-(sp)
                     move.l  a0,-(sp)
                     DOS     _SETBLOCK
@@ -102,13 +102,13 @@ begin:
                     moveq   #0,d2
                     move.w  (a0)+,d2
                     cmp.w   #1,d2
-                    bne.b   .reloc_longjump
+                    bne     .reloc_longjump
                     move.l  (a0)+,d2
 .reloc_longjump:
                     add.l   d2,a1
                     add.l   d3,(a1)
                     cmp.l   a3,a0
-                    bne.b   .dorelocs
+                    bne     .dorelocs
                     move.l  ENTRY_POINT(a2),d7
                     movem.l (a7)+,d0-d6/a0-a3/a5/a6
                     jmp     (a4,d7.l)

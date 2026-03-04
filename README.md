@@ -6,9 +6,20 @@ and can decrunch in-place without any overhead.
 
 It can pack Amiga executables, X68000 executables or plain data files.
 
+Packed executables use "overlay" depackers:
+
+A forged header instructing the OS to only load a fraction of the file
+(just containing a 2nd level loader and a data depacker),
+the exe then loads, depacks and relocates the data it contains "in place"
+thus only using a very tiny amount of memory overhead.
+
 68000 asm decruncher taken and improved from a Team 17 game.
 
 Windows and Amiga executables provided.
+
+v1.4b:
+
+- Fixed some potential memory leaks.
 
 v1.4:
 

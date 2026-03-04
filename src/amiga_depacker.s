@@ -1,5 +1,5 @@
 ; ============================================================
-; Impoder v1.4 overlay Amiga depacker
+; Impoder v1.4b overlay Amiga depacker
 ; Written by hitchhikr (inspired by Titanics Cruncher).
 ; ============================================================
                     opt     o+
